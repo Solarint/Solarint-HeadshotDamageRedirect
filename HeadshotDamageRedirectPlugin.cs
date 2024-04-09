@@ -43,7 +43,7 @@ namespace Solarint.HeadshotDamageRedirect
                 float oldDmg = damageInfo.Damage;
                 float newDamage = ReduceDamage(damageInfo);
 
-                Logger.LogInfo($"Headshot Damage To Player! Original Damage: {oldDmg} New Damage: {newDamage} :: {damageInfo.Damage} damage redirected to {newPart}");
+                Logger.LogInfo($"Headshot Damage To Player! Original Head Damage: {oldDmg} New Head Damage: {newDamage} :: {damageInfo.Damage} damage redirected to {newPart}");
 
                 __instance.ApplyShot(damageInfo, newPart, colliderType, armorPlateCollider, shotId);
 
@@ -66,28 +66,24 @@ namespace Solarint.HeadshotDamageRedirect
 
             for (int i = 0; i < BodyParts.Count; i++)
             {
-                if (IsPartEnabled(BodyParts[i]))
+                EBodyPart bodyPart = BodyParts[i];
+                if (Settings.RedirectParts[bodyPart].Value)
                 {
-                    return BodyParts[i];
+                    return bodyPart;
                 }
             }
 
             return EBodyPart.Stomach;
         }
 
-        private static bool IsPartEnabled(EBodyPart part)
+        public static readonly List<EBodyPart> BodyParts = new List<EBodyPart>
         {
-            return Settings.RedirectParts.Value.HasFlag(part);
-        }
-
-        private static readonly List<EBodyPart> BodyParts = new List<EBodyPart>
-        {
-            EBodyPart.LeftLeg,
-            EBodyPart.RightLeg,
+            EBodyPart.Chest,
+            EBodyPart.Stomach,
             EBodyPart.LeftArm,
             EBodyPart.RightArm,
-            EBodyPart.Chest,
-            EBodyPart.Stomach
+            EBodyPart.LeftLeg,
+            EBodyPart.RightLeg
         };
     }
 
@@ -98,7 +94,7 @@ namespace Solarint.HeadshotDamageRedirect
         public static ConfigEntry<bool> ModEnabled;
 
         public static ConfigEntry<float> RedirectPercentage;
-        public static ConfigEntry<EBodyPart> RedirectParts; 
+        public static Dictionary<EBodyPart, ConfigEntry<bool>> RedirectParts = new Dictionary<EBodyPart, ConfigEntry<bool>>();
         public const EBodyPart SettingsDefaults = EBodyPart.Chest | EBodyPart.Stomach | EBodyPart.LeftArm | EBodyPart.RightArm | EBodyPart.LeftLeg | EBodyPart.RightLeg;
 
         public static void Init(ConfigFile Config)
@@ -119,16 +115,19 @@ namespace Solarint.HeadshotDamageRedirect
                     new AcceptableValueRange<float>(1f, 100f)
                 ));
 
-            RedirectParts = Config.Bind(
+            for (int i = 0; i < ApplyShotPatch.BodyParts.Count; i++)
+            {
+                EBodyPart part = ApplyShotPatch.BodyParts[i];
+                ConfigEntry<bool> config = Config.Bind(
                 "Redirect to Parts",
-                "Headshot damage will redirect randomly to all selected parts.",
-                SettingsDefaults,
+                part.ToString(),
+                true,
                 new ConfigDescription(
-                    "Enables corpse looting for the selected bot types",
-                    null,
-                    new ConfigurationManagerAttributes { Order = 10 }
-                )
-            );
+                    $"Headshot damage will redirect to {part}"
+                    )
+                );
+                RedirectParts.Add( part, config );
+            }
 
         }
     }
