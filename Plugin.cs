@@ -14,7 +14,7 @@ using ShotID = GStruct390;
 
 namespace Solarint.HeadshotDamageRedirect
 {
-    [BepInPlugin("solarint.dmgRedirect", "Solarint-HeadshotDamageRedirect", "1.1.0")]
+    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
