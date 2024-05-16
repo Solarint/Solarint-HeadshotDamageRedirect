@@ -20,13 +20,13 @@ namespace Solarint.HeadshotDamageRedirect
         private void Awake()
         {
             Settings.Init(Config);
-            new ApplyShotPatch().Enable();
+            new ApplyDamageInfoPatch().Enable();
         }
     }
 
-    internal class ApplyShotPatch : ModulePatch
+    internal class ApplyDamageInfoPatch : ModulePatch
     {
-        protected override MethodBase GetTargetMethod() => typeof(Player).GetMethod("ApplyShot");
+        protected override MethodBase GetTargetMethod() => typeof(Player).GetMethod("ApplyDamageInfo");
 
         [PatchPrefix]
         public static void PatchPrefix(ref EBodyPart bodyPartType, ref DamageInfo damageInfo, ref Player __instance)
@@ -39,66 +39,56 @@ namespace Solarint.HeadshotDamageRedirect
             // Is the incoming damage coming to the head, and is the current player instance the main player?
             if (bodyPartType == EBodyPart.Head && __instance.IsYourPlayer)
             {
-                // Did the shot actually penetrate the player's helmet?
-                bool penetrated = ShotPenetrated(damageInfo);
-                if (penetrated)
+                float originalDamageTohead = damageInfo.Damage;
+
+                // Did the user set a minimum damage threshold for the mod to activate? if so, check to see if the incoming damage meets that threshold.
+                float minDmg = Settings.MinHeadDamageToRedirect.Value;
+                if (minDmg > 0 && minDmg > originalDamageTohead)
                 {
-                    float originalDamageTohead = damageInfo.Damage;
-
-                    // Did the user set a minimum damage threshold for the mod to activate? if so, check to see if the incoming damage meets that threshold.
-                    float minDmg = Settings.MinHeadDamageToRedirect.Value;
-                    if (minDmg > 0 && minDmg > originalDamageTohead)
-                    {
-                        return;
-                    }
-
-                    // Select a random part from the ones the user has selected as valid to redirect to
-                    EBodyPart newPart = SelectRandomBodyPart();
-
-                    // Reduce the incoming head damage by a ratio the user has set
-                    float newDamageToHead = ReduceDamage(originalDamageTohead, out float damageToRedirect);
-
-                    // Create a new instance of DamageInfo with all the same info as the original
-                    DamageInfo redirectedDamageInfo = CloneDamageInfo(damageInfo);
-
-                    // Update the info in the new damageinfo to label it correctly and apply the redirected damage
-                    UpdateNewDamageInfo(redirectedDamageInfo, damageInfo, damageToRedirect);
-
-                    // Match the body part collider to the randomly selected body part
-                    EBodyPartColliderType newColliderType = GetNewColliderType(newPart);
-
-                    // Create a new shotID
-                    ShotID newShotID = new ShotID(redirectedDamageInfo.SourceId, 0);
-
-                    // Apply the redirected damage to the selected part
-                    __instance.ApplyShot(redirectedDamageInfo, newPart, newColliderType, 0, newShotID);
-
-                    // If the user set the max damage above 0, clamp the damage to what is set
-                    float maxDmg = Settings.MaxHeadDamageNumber.Value;
-                    if (maxDmg > 0)
-                    {
-                        newDamageToHead = UnityEngine.Mathf.Clamp(newDamageToHead, 0, maxDmg);
-                    }
-
-                    // Log what happened
-                    LogMessage(originalDamageTohead, newDamageToHead, damageToRedirect, newPart);
-
-                    // Update the damage to our reduced number.
-                    damageInfo.Damage = newDamageToHead;
-
-                    // All Done!
+                    return;
                 }
+
+                // Select a random part from the ones the user has selected as valid to redirect to
+                EBodyPart newPart = SelectRandomBodyPart();
+
+                // Reduce the incoming head damage by a ratio the user has set
+                float newDamageToHead = ReduceDamage(originalDamageTohead, out float damageToRedirect);
+
+                // Create a new instance of DamageInfo with all the same info as the original
+                DamageInfo redirectedDamageInfo = CloneDamageInfo(damageInfo);
+
+                // Update the info in the new damageinfo to label it correctly and apply the redirected damage
+                UpdateNewDamageInfo(redirectedDamageInfo, damageInfo, damageToRedirect);
+
+                // Match the body part collider to the randomly selected body part
+                EBodyPartColliderType newColliderType = GetNewColliderType(newPart);
+
+                // Create a new shotID
+                ShotID newShotID = new ShotID(redirectedDamageInfo.SourceId, 0);
+
+                // Apply the redirected damage to the selected part
+                __instance.ApplyShot(redirectedDamageInfo, newPart, newColliderType, 0, newShotID);
+
+                // If the user set the max damage above 0, clamp the damage to what is set
+                float maxDmg = Settings.MaxHeadDamageNumber.Value;
+                if (maxDmg > 0)
+                {
+                    newDamageToHead = UnityEngine.Mathf.Clamp(newDamageToHead, 0, maxDmg);
+                }
+
+                // Log what happened
+                LogMessage(originalDamageTohead, newDamageToHead, damageToRedirect, newPart);
+
+                // Update the damage to our reduced number.
+                damageInfo.Damage = newDamageToHead;
+
+                // All Done!
             }
 
             if (Settings.DebugEnabled.Value && __instance.IsYourPlayer)
             {
                 damageInfo.Damage = 1f;
             }
-        }
-
-        private static bool ShotPenetrated(DamageInfo damageInfo)
-        {
-            return (string.IsNullOrEmpty(damageInfo.BlockedBy) || string.IsNullOrEmpty(damageInfo.DeflectedBy));
         }
 
         private static void LogMessage(float originalDamageTohead, float newDamageToHead, float damageToRedirect, EBodyPart newPart)
@@ -346,7 +336,7 @@ namespace Solarint.HeadshotDamageRedirect
                 ));
 
             // Body Part Selection
-            List<EBodyPart> baseParts = ApplyShotPatch.BaseBodyParts;
+            List<EBodyPart> baseParts = ApplyDamageInfoPatch.BaseBodyParts;
             for (int i = 0; i < baseParts.Count; i++)
             {
                 EBodyPart part = baseParts[i];
