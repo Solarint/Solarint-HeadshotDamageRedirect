@@ -1,20 +1,17 @@
-﻿using Aki.Reflection.Patching;
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Configuration;
 using EFT;
-using EFT.Ballistics;
 using EFT.Communications;
-using EFT.UI.Health;
+using SPT.Reflection.Patching;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Text;
 using System.Threading;
-using ShotID = GStruct390;
+using ShotID = GStruct389;
 
 namespace Solarint.HeadshotDamageRedirect
 {
-    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.1.0")]
+    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.1.1")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
