@@ -7,8 +7,8 @@
     <ProjectGuid>{3030962D-9B38-4745-86B7-CEDB49EF262F}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Solarint.HeadshotDamageRedirect</RootNamespace>
-    <AssemblyName>Solarint-HeadshotDamageRedirect</AssemblyName>
+    <RootNamespace>Solarint.GrenadeIndicator</RootNamespace>
+    <AssemblyName>Solarint-GrenadeIndicator</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
@@ -40,12 +40,19 @@
     <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="0Harmony, Version=2.9.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\BepInEx\core\0Harmony.dll</HintPath>
+    </Reference>
     <Reference Include="Assembly-CSharp, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\Assembly-CSharp.dll</HintPath>
     </Reference>
     <Reference Include="BepInEx">
       <HintPath>..\..\BepInEx\core\BepInEx.dll</HintPath>
+    </Reference>
+    <Reference Include="BepInEx.Harmony">
+      <HintPath>..\..\BepInEx\core\BepInEx.Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Comfort">
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\Comfort.dll</HintPath>
@@ -61,6 +68,10 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
+    <Reference Include="Unity.Postprocessing.Runtime, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\..\EscapeFromTarkov_Data\Managed\Unity.Postprocessing.Runtime.dll</HintPath>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>..\..\EscapeFromTarkov_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
@@ -81,9 +92,14 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AddIndicatorPatch.cs" />
+    <Compile Include="ApplyToStyle.cs" />
     <Compile Include="ConfigurationManagerAttributes.cs" />
+    <Compile Include="DebugGizmos.cs" />
+    <Compile Include="GUIObject.cs" />
     <Compile Include="Plugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="StyleState.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="LICENSE" />

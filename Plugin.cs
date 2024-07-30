@@ -1,461 +1,336 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
+using Comfort.Common;
 using EFT;
-using EFT.Communications;
-using SPT.Reflection.Patching;
-using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Text;
-using System.Threading;
-using ShotID = GStruct389;
+using UnityEngine;
 
-namespace Solarint.HeadshotDamageRedirect
+namespace Solarint.GrenadeIndicator
 {
-    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.3.0")]
+    [BepInPlugin("solarint.grenadeIndicator", "Grenade Indicator", "1.0.0")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
         {
             Settings.Init(Config);
-            new ApplyDamageInfoPatch().Enable();
-        }
-    }
-
-    internal class ApplyDamageInfoPatch : ModulePatch
-    {
-        protected override MethodBase GetTargetMethod() => typeof(Player).GetMethod("ApplyDamageInfo");
-
-        [PatchPrefix]
-        public static void PatchPrefix(ref EBodyPart bodyPartType, ref DamageInfo damageInfo, ref Player __instance)
-        {
-            if (Settings.ModEnabled.Value == false) {
-                return;
-            }
-
-            // Is the incoming damage coming to the head, and is the current player instance the main player?
-            if (bodyPartType == EBodyPart.Head && __instance.IsYourPlayer) {
-                float chance = Settings.ChanceToRedirect.Value;
-                if (chance < 100 && !RandomBool(chance)) {
-                    return;
-                }
-
-                float originalDamageTohead = damageInfo.Damage;
-
-                // Did the user set a minimum damage threshold for the mod to activate? if so, check to see if the incoming damage meets that threshold.
-                float minDmg = Settings.MinHeadDamageToRedirect.Value;
-                if (minDmg > 0 && minDmg > originalDamageTohead) {
-                    return;
-                }
-
-                // Reduce the incoming head damage by a ratio the user has set
-                float newDamageToHead = ReduceDamage(originalDamageTohead, out float damageToRedirect);
-
-                _sb.Clear();
-                var parts = _partsToRedirect;
-                getPartsToRedirect(parts);
-                createDamageToEachPart(parts, damageToRedirect, damageInfo, __instance, _sb);
-
-                // If the user set the max damage above 0, clamp the damage to what is set
-                float maxDmg = Settings.MaxHeadDamageNumber.Value;
-                if (maxDmg > 0) {
-                    newDamageToHead = UnityEngine.Mathf.Clamp(newDamageToHead, 0, maxDmg);
-                }
-
-                // Log what happened
-                LogMessage(originalDamageTohead, newDamageToHead, damageToRedirect, _sb);
-
-                // Update the damage to our reduced number.
-                damageInfo.Damage = newDamageToHead;
-
-                // All Done!
-            }
-
-            if (Settings.DebugEnabled.Value && __instance.IsYourPlayer) {
-                damageInfo.Damage = 1f;
-            }
+            new AddIndicatorPatch().Enable();
         }
 
-        private static readonly StringBuilder _sb = new StringBuilder();
-
-        private static void createDamageToEachPart(List<EBodyPart> parts, float totalDamage, DamageInfo damageInfo, Player player, StringBuilder stringBuilder)
+        private void Update()
         {
-            float perPart = totalDamage / parts.Count;
-            foreach (var part in parts) {
-                // Create a new instance of DamageInfo with all the same info as the original
-                DamageInfo redirectedDamageInfo = CloneDamageInfo(damageInfo);
-
-                // Update the info in the new damageinfo to label it correctly and apply the redirected damage
-                UpdateNewDamageInfo(redirectedDamageInfo, damageInfo, perPart);
-
-                // Match the body part collider to the randomly selected body part
-                EBodyPartColliderType newColliderType = GetNewColliderType(part);
-
-                // Create a new shotID
-                ShotID newShotID = new ShotID(redirectedDamageInfo.SourceId, 0);
-
-                // Apply the redirected damage to the selected part
-                player.ApplyShot(redirectedDamageInfo, part, newColliderType, 0, newShotID);
-
-                stringBuilder.AppendLine($"Redirected [{perPart}] to [{part}]");
-            }
         }
 
-        private static void getPartsToRedirect(List<EBodyPart> parts)
+        private void OnGUI()
         {
-            int target = Settings.BodyPartsCountToRedirectTo.Value;
-            parts.Clear();
-            if (target == 1) {
-                parts.Add(SelectRandomBodyPart());
-                return;
-            }
-
-            int max = BaseBodyParts.Count;
-            if (target >= max) {
-                parts.AddRange(BaseBodyParts);
-                return;
-            }
-
-            const int maxIterations = 100;
-            for (int i = 0; i < maxIterations; i++) {
-                EBodyPart random = SelectRandomBodyPart();
-                if (!parts.Contains(random)) {
-                    parts.Add(random);
-                }
-                if (parts.Count == target) {
-                    break;
-                }
-            }
+            TrackedGrenade.OnGUI();
+            DebugGizmos.OnGUI();
         }
 
-        private static readonly List<EBodyPart> _partsToRedirect = new List<EBodyPart>();
-
-        private static void LogMessage(float originalDamageTohead, float newDamageToHead, float damageToRedirect, StringBuilder stringBuilder)
+        public static Color GetColor(int mode)
         {
-            string message = $"Headshot Damage To Player! Original Damage: [{originalDamageTohead}] " +
-                $": New Damage: [{newDamageToHead}] " +
-                $": [{damageToRedirect}] total damage redirected";
+            switch (mode) {
+                case 0:
+                    return Color.red;
 
-            stringBuilder.AppendLine(message);
+                case 1:
+                    return Color.white;
 
-            if (Settings.DisplayMessage.Value || Settings.DebugEnabled.Value) {
-                NotificationManagerClass.DisplayMessageNotification(stringBuilder.ToString(), ENotificationDurationType.Default, ENotificationIconType.Alert);
-            }
-            Logger.LogInfo(stringBuilder.ToString());
-        }
+                case 2:
+                    return Color.blue;
 
-        private static bool RandomBool(float v)
-        {
-            return UnityEngine.Random.Range(0f, 100f) < v;
-        }
+                case 3:
+                    return Color.green;
 
-        private static void UpdateNewDamageInfo(DamageInfo redirectedDamageInfo, DamageInfo originalDamageInfo, float damageToRedirect)
-        {
-            redirectedDamageInfo.Damage = damageToRedirect;
-            redirectedDamageInfo.ArmorDamage = 0f;
-            redirectedDamageInfo.BlockedBy = string.Empty;
-            redirectedDamageInfo.DeflectedBy = string.Empty;
-            redirectedDamageInfo.DidArmorDamage = 0f;
-            //redirectedDamageInfo.OverDamageFrom = EBodyPart.Head;
-            redirectedDamageInfo.FireIndex = 0;
-            //redirectedDamageInfo.GetOverDamage(EBodyPart.Head);
-        }
-
-        private static EBodyPartColliderType GetNewColliderType(EBodyPart newPart)
-        {
-            EBodyPartColliderType newColliderType;
-            switch (newPart) {
-                case EBodyPart.Chest:
-                    newColliderType = EBodyPartColliderType.RibcageUp;
-                    break;
-
-                case EBodyPart.Stomach:
-                    newColliderType = EBodyPartColliderType.RibcageLow;
-                    break;
-
-                case EBodyPart.LeftArm:
-                    newColliderType = EBodyPartColliderType.LeftUpperArm;
-                    break;
-
-                case EBodyPart.RightArm:
-                    newColliderType = EBodyPartColliderType.RightUpperArm;
-                    break;
-
-                case EBodyPart.LeftLeg:
-                    newColliderType = EBodyPartColliderType.LeftThigh;
-                    break;
-
-                case EBodyPart.RightLeg:
-                    newColliderType = EBodyPartColliderType.RightThigh;
-                    break;
+                case 4:
+                    return _randomColor;
 
                 default:
-                    newColliderType = EBodyPartColliderType.RibcageUp;
-                    break;
+                    return new Color(Settings.CustomRed.Value, Settings.CustomGreen.Value, Settings.CustomBlue.Value);
             }
-            return newColliderType;
         }
 
-        private static DamageInfo CloneDamageInfo(DamageInfo oldDamageInfo)
+        private static float _randomFloat => Random.Range(0.33f, 1f);
+        private static Color _randomColor => new Color(_randomFloat, _randomFloat, _randomFloat);
+    }
+
+    public class GrenadeIndicatorComponent : MonoBehaviour
+    {
+        private const float MAX_GRENADE_TRACK_DIST = 125f;
+        private Camera _camera;
+
+        private void Start()
         {
-            return new DamageInfo {
-                Damage = oldDamageInfo.Damage,
-                DamageType = oldDamageInfo.DamageType,
-                PenetrationPower = oldDamageInfo.PenetrationPower,
-                HitCollider = oldDamageInfo.HitCollider,
-                Direction = oldDamageInfo.Direction,
-                HitPoint = oldDamageInfo.HitPoint,
-                MasterOrigin = oldDamageInfo.MasterOrigin,
-                HitNormal = oldDamageInfo.HitNormal,
-                HittedBallisticCollider = oldDamageInfo.HittedBallisticCollider,
-                Player = oldDamageInfo.Player,
-                Weapon = oldDamageInfo.Weapon,
-                FireIndex = oldDamageInfo.FireIndex,
-                ArmorDamage = oldDamageInfo.ArmorDamage,
-                IsForwardHit = oldDamageInfo.IsForwardHit,
-                HeavyBleedingDelta = oldDamageInfo.HeavyBleedingDelta,
-                LightBleedingDelta = oldDamageInfo.LightBleedingDelta,
-                BleedBlock = oldDamageInfo.BleedBlock,
-                DeflectedBy = oldDamageInfo.DeflectedBy,
-                BlockedBy = oldDamageInfo.BlockedBy,
-                StaminaBurnRate = oldDamageInfo.StaminaBurnRate,
-                DidBodyDamage = oldDamageInfo.DidBodyDamage,
-                DidArmorDamage = oldDamageInfo.DidArmorDamage,
-                SourceId = oldDamageInfo.SourceId,
-                OverDamageFrom = oldDamageInfo.OverDamageFrom,
-                BodyPartColliderType = oldDamageInfo.BodyPartColliderType,
-            };
+            GameWorld.OnDispose += Dispose;
         }
 
-        private static float ReduceDamage(float damageToHead, out float damageToRedirect)
+        private void Update()
         {
-            float originalDamageToHead = damageToHead;
-
-            float ratio = 1f - Settings.RedirectPercentage.Value / 100f;
-            float newDamageToHead = originalDamageToHead * ratio;
-
-            damageToRedirect = originalDamageToHead - newDamageToHead;
-            damageToRedirect *= Settings.HeadshotMultiplier.Value;
-            return newDamageToHead;
+            if (_subscribed) {
+                return;
+            }
+            var botEvent = Singleton<BotEventHandler>.Instance;
+            if (botEvent != null) {
+                botEvent.OnGrenadeThrow += grenadeThrown;
+                _subscribed = true;
+            }
         }
 
-        private static EBodyPart SelectRandomBodyPart()
+        public void Dispose()
         {
-            BaseBodyParts.Shuffle();
+            GameWorld.OnDispose -= Dispose;
+            var botEvent = Singleton<BotEventHandler>.Instance;
+            if (botEvent != null) {
+                botEvent.OnGrenadeThrow -= grenadeThrown;
+            }
 
-            for (int i = 0; i < BaseBodyParts.Count; i++) {
-                EBodyPart bodyPart = BaseBodyParts[i];
-                if (Settings.RedirectParts[bodyPart].Value == true) {
-                    return bodyPart;
+            foreach (var tracker in _grenades.Values) {
+                var grenade = tracker?.Grenade;
+                if (grenade != null) {
+                    grenade.DestroyEvent -= removeGrenade;
                 }
+                tracker?.Dispose();
             }
 
-            return EBodyPart.Chest;
+            _grenades.Clear();
         }
 
-        public static readonly List<EBodyPart> BaseBodyParts = new List<EBodyPart>
+        private void grenadeThrown(Grenade grenade, Vector3 position, Vector3 force, float mass)
         {
-            EBodyPart.Chest,
-            EBodyPart.Stomach,
-            EBodyPart.LeftArm,
-            EBodyPart.RightArm,
-            EBodyPart.LeftLeg,
-            EBodyPart.RightLeg
-        };
-    }
-
-    // Code used from https://stackoverflow.com/questions/273313/randomize-a-listt
-    public static class ThreadSafeRandom
-    {
-        [ThreadStatic] private static Random Local;
-
-        public static Random ThisThreadsRandom {
-            get { return Local ?? (Local = new Random(unchecked(Environment.TickCount * 31 + Thread.CurrentThread.ManagedThreadId))); }
-        }
-    }
-
-    // Code used from https://stackoverflow.com/questions/273313/randomize-a-listt
-    internal static class MyExtensions
-    {
-        public static void Shuffle<T>(this IList<T> list)
-        {
-            int n = list.Count;
-            while (n > 1) {
-                n--;
-                int k = ThreadSafeRandom.ThisThreadsRandom.Next(n + 1);
-                T value = list[k];
-                list[k] = list[n];
-                list[n] = value;
+            if (grenade == null) {
+                return;
             }
+
+            if (!Settings.ModEnabled.Value) {
+                return;
+            }
+            if (_camera == null) {
+                _camera = Camera.main;
+            }
+            if ((position - _camera.transform.position).sqrMagnitude > MAX_GRENADE_TRACK_DIST * MAX_GRENADE_TRACK_DIST) {
+                return;
+            }
+            grenade.DestroyEvent += removeGrenade;
+            _grenades.Add(grenade.Id, grenade.gameObject.AddComponent<TrackedGrenade>());
+        }
+
+        private void removeGrenade(Throwable grenade)
+        {
+            if (grenade == null) {
+                return;
+            }
+            grenade.DestroyEvent -= removeGrenade;
+            if (_grenades.TryGetValue(grenade.Id, out var indicator)) {
+                indicator.Dispose();
+                _grenades.Remove(grenade.Id);
+            }
+        }
+
+        private readonly Dictionary<int, TrackedGrenade> _grenades = new Dictionary<int, TrackedGrenade>();
+
+        private bool _subscribed;
+    }
+
+    public class TrackedGrenade : MonoBehaviour
+    {
+        public static void OnGUI()
+        {
+            if (DefaultStyle == null) {
+                createStyle();
+            }
+        }
+
+        private static void createStyle()
+        {
+            DefaultStyle = new GUIStyle(GUI.skin.box) {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = 32
+            };
+            ApplyToStyle.TextColorAllStates(Color.red, DefaultStyle);
+            ApplyToStyle.BackgroundAllStates(null, DefaultStyle);
+        }
+
+        private static GUIStyle DefaultStyle;
+
+        private const float MAX_GRENADE_INDICATE_DIST = 40f;
+
+        public Grenade Grenade { get; private set; }
+        private float Distance;
+        private Vector3 Position;
+
+        private Camera _camera = Camera.main;
+
+        private GUIObject _indicator;
+
+        private void Awake()
+        {
+            Grenade = this.GetComponent<Grenade>();
+            _indicator = DebugGizmos.CreateLabel(Grenade.transform.position, "[!]", DefaultStyle, 1f);
+
+            if (Settings.TrailEnabled.Value) {
+                _trailRenderer = this.gameObject.AddComponent<TrailRenderer>();
+                _trailRenderer.enabled = true;
+                _trailRenderer.emitting = true;
+                _trailRenderer.startWidth = Settings.TrailStartSize.Value;
+                _trailRenderer.endWidth = Settings.TrailEndSize.Value;
+                _trailRenderer.material.color = Plugin.GetColor(Settings.TrailColorMode.Value);
+                _trailRenderer.colorGradient.mode = GradientMode.Fixed;
+                _trailRenderer.time = Settings.TrailExpireTime.Value;
+                _trailRenderer.numCapVertices = 5;
+                _trailRenderer.numCornerVertices = 5;
+                _trailRenderer.receiveShadows = Settings.TrailShadows.Value;
+            }
+
+            //_light = grenade.gameObject.AddComponent<Light>();
+            //_light.enabled = true;
+            //_light.color = Color.red;
+            //_light.type = LightType.Point;
+            //_light.range = 25f;
+            //_light.intensity = 50f;
+        }
+
+        private TrailRenderer _trailRenderer;
+        //private Light _light;
+
+        private void Update()
+        {
+            if (Grenade == null || Grenade.transform == null) return;
+
+            Position = Grenade.transform.position;
+            _indicator.WorldPos = Position;
+            Vector3 cameraPos = _camera.transform.position;
+            Vector3 direction = Position - cameraPos;
+            Distance = direction.magnitude;
+
+            bool showIndicator = Distance < MAX_GRENADE_INDICATE_DIST;
+            if (showIndicator &&
+                Settings.RequireLOS.Value &&
+                Physics.Raycast(cameraPos, direction, Distance, LayerMaskClass.HighPolyWithTerrainMaskAI)) {
+                showIndicator = false;
+            }
+            _indicator.Enabled = showIndicator;
+
+            float clamped = Mathf.Clamp(Distance, 0f, MAX_GRENADE_INDICATE_DIST);
+            float scaled = 1f - clamped / MAX_GRENADE_INDICATE_DIST;
+            scaled = Mathf.Clamp(scaled, 0.1f, 1f);
+            _indicator.Scale = scaled * Settings.IndicatorSize.Value;
+        }
+
+        public void Dispose()
+        {
+            DebugGizmos.DestroyLabel(_indicator);
+            Destroy(this);
         }
     }
 
     internal class Settings
     {
         public static ConfigEntry<bool> ModEnabled;
-        public static ConfigEntry<bool> DisplayMessage;
-        public static ConfigEntry<bool> DebugEnabled;
+        public static ConfigEntry<bool> RequireLOS;
+        public static ConfigEntry<float> IndicatorSize;
+        public static ConfigEntry<bool> TrailEnabled;
+        public static ConfigEntry<bool> TrailShadows;
+        public static ConfigEntry<float> TrailStartSize;
+        public static ConfigEntry<float> TrailEndSize;
+        public static ConfigEntry<float> TrailExpireTime;
+        public static ConfigEntry<int> IndicatorColorMode;
+        public static ConfigEntry<int> TrailColorMode;
 
-        // public static ConfigEntry<bool> OneHitKillProtection;
-        public static ConfigEntry<float> RedirectPercentage;
-
-        public static ConfigEntry<float> MaxHeadDamageNumber;
-        public static ConfigEntry<float> MinHeadDamageToRedirect;
-        public static ConfigEntry<float> ChanceToRedirect;
-        public static ConfigEntry<float> HeadshotMultiplier;
-        public static ConfigEntry<int> BodyPartsCountToRedirectTo;
-
-        public static Dictionary<EBodyPart, ConfigEntry<bool>> RedirectParts = new Dictionary<EBodyPart, ConfigEntry<bool>>();
+        public static ConfigEntry<float> CustomRed;
+        public static ConfigEntry<float> CustomGreen;
+        public static ConfigEntry<float> CustomBlue;
 
         public static void Init(ConfigFile Config)
         {
             const string GeneralSectionTitle = "General";
-            const string OptionalSectionTitle = "Optional";
-            const string SelectPartSection = "Redirection Body Part Targets";
 
             int optionCount = 0;
 
-            string name = "Enable Damage Redirection";
-            string description = "Turns this mod On or Off";
-            bool defaultBool = true;
-
             ModEnabled = Config.Bind(
-                GeneralSectionTitle, name, defaultBool,
-                new ConfigDescription(description, null,
+                GeneralSectionTitle, "Enable Indicator", true,
+                new ConfigDescription(string.Empty, null,
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Display Notification on Damage Received";
-            description = "Display an in game notification when damage to your head is detected and modified.";
-            defaultBool = false;
-
-            DisplayMessage = Config.Bind(
-                GeneralSectionTitle, name, defaultBool,
-                new ConfigDescription(description, null,
+            RequireLOS = Config.Bind(
+                GeneralSectionTitle, "Require Line of Sight", false,
+                new ConfigDescription(string.Empty, null,
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Damage Redirection Percentage";
-            description = "The amount of damage in percentage, to redirect to another body part when the player is headshot. " +
-                    "So if this is set to 60, and you receive 50 damage to your head, you will instead receive 20 damage to their head, " +
-                    "and 40 will be redirected to a random body part selected. ";
-            float defaultFloat = 60f;
-
-            RedirectPercentage = Config.Bind(
-                GeneralSectionTitle, name, defaultFloat,
-                new ConfigDescription(description,
-                new AcceptableValueRange<float>(0f, 100f),
+            IndicatorSize = Config.Bind(
+                GeneralSectionTitle, "Indicator Size", 1f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0.25f, 5f),
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Debug Enabled";
-            description = "Force Notification, Set all damage that isn't the head to 1";
-            defaultBool = false;
-
-            DebugEnabled = Config.Bind(
-                GeneralSectionTitle, name, defaultBool,
-                new ConfigDescription(description, null,
-                new ConfigurationManagerAttributes { Order = optionCount--, IsAdvanced = true }
-                ));
-
-            // Optional Settings
-            name = "Percentage Chance to Redirect";
-            description =
-                "100 means this is disabled. " +
-                "If below 100, this will roll a chance to actually redirect damage. " +
-                "if the roll fails, this mod will affect nothing, and full damage will go to your head.";
-            defaultFloat = 100f;
-
-            ChanceToRedirect = Config.Bind(
-                OptionalSectionTitle, name, defaultFloat,
-                new ConfigDescription(description,
-                new AcceptableValueRange<float>(0f, 100f),
+            TrailEnabled = Config.Bind(
+                GeneralSectionTitle, "Draw Trail", false,
+                new ConfigDescription(string.Empty, null,
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Headshot Damage Multiplier";
-            description =
-                "1 means this is disabled. " +
-                "If above 1, damage to the head will be multiplied before being sent to another body part, making it more punishing.";
-            defaultFloat = 1f;
-
-            HeadshotMultiplier = Config.Bind(
-                OptionalSectionTitle, name, defaultFloat,
-                new ConfigDescription(description,
-                new AcceptableValueRange<float>(1f, 3f),
+            TrailShadows = Config.Bind(
+                GeneralSectionTitle, "Draw Shadows on Trail", false,
+                new ConfigDescription(string.Empty, null,
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Minimum Head Damage To Redirect";
-            description =
-                "0 means this is disabled. " +
-                "If set above 0, this will be the minimum damage to your head for damage redirection to occur " +
-                "So for example, if the player receives 20 damage to the head, and this is set to 30, no damage will be redirected at all, and the mod will do nothing. " +
-                "This happens BEFORE redirection!";
-            defaultFloat = 0f;
-
-            MaxHeadDamageNumber = Config.Bind(
-                OptionalSectionTitle, name, defaultFloat,
-                new ConfigDescription(description,
-                new AcceptableValueRange<float>(0f, 100f),
+            TrailStartSize = Config.Bind(
+                GeneralSectionTitle, "Trail Start Size", 0.075f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0.01f, 0.2f),
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            name = "Minimum Head Damage To Redirect";
-            description =
-                "0 means this is disabled. " +
-                "If set above 0, this will be the minimum damage to your head for damage redirection to occur " +
-                "So for example, if the player receives 20 damage to the head, and this is set to 30, no damage will be redirected at all, and the mod will do nothing. " +
-                "This happens BEFORE redirection!";
-            defaultFloat = 0f;
-
-            MinHeadDamageToRedirect = Config.Bind(
-                OptionalSectionTitle, name, defaultFloat,
-                new ConfigDescription(description,
-                new AcceptableValueRange<float>(0f, 100f),
+            TrailEndSize = Config.Bind(
+                GeneralSectionTitle, "Trail End Size", 0.001f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0.001f, 0.2f),
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            // Body Part Selection
-            List<EBodyPart> baseParts = ApplyDamageInfoPatch.BaseBodyParts;
-
-            name = "Parts to Redirect To.";
-            description =
-                "How many parts to spread the damage received to.";
-
-            BodyPartsCountToRedirectTo = Config.Bind(
-                SelectPartSection, name, 1,
-                new ConfigDescription(description,
-                new AcceptableValueRange<int>(1, baseParts.Count),
+            TrailExpireTime = Config.Bind(
+                GeneralSectionTitle, "Trail Expire Time", 0.8f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0.2f, 5f),
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-            for (int i = 0; i < baseParts.Count; i++) {
-                EBodyPart part = baseParts[i];
-                name = part.ToString();
-                description =
-                    $"Headshot damage will be able to be redirected to [{part}]. " +
-                    $"Which part is selected is random, but will only select from the parts enabled here. " +
-                    $"For example, If you wish to have HDR only redirect to the chest, disable all other parts except the chest.";
-
-                ConfigEntry<bool> config = Config.Bind(
-                SelectPartSection, name, true,
-                new ConfigDescription(description, null,
+            IndicatorColorMode = Config.Bind(
+                GeneralSectionTitle, "Indicator Color Mode", 0,
+                new ConfigDescription("0 = red, 1 = white, 2 = blue, 3 = green, 4 = random, 5 = custom",
+                new AcceptableValueRange<int>(0, 5),
                 new ConfigurationManagerAttributes { Order = optionCount-- }
                 ));
 
-                RedirectParts.Add(part, config);
-            }
-        }
+            TrailColorMode = Config.Bind(
+                GeneralSectionTitle, "Trail Color Mode", 0,
+                new ConfigDescription("0 = red, 1 = white, 2 = blue, 3 = green, 4 = random, 5 = custom",
+                new AcceptableValueRange<int>(0, 5),
+                new ConfigurationManagerAttributes { Order = optionCount-- }
+                ));
 
-        public static int CheckPartsEnabledCount()
-        {
-            int result = 0;
-            foreach (var part in RedirectParts.Values)
-                if (part.Value == true)
-                    result++;
+            CustomRed = Config.Bind(
+                GeneralSectionTitle, "Custom R", 1f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = optionCount-- }
+                ));
 
-            return result;
+            CustomGreen = Config.Bind(
+                GeneralSectionTitle, "Custom G", 1f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = optionCount-- }
+                ));
+
+            CustomBlue = Config.Bind(
+                GeneralSectionTitle, "Custom B", 1f,
+                new ConfigDescription(string.Empty,
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = optionCount-- }
+                ));
         }
     }
 }
