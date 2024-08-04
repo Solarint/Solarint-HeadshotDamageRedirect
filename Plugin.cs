@@ -7,7 +7,7 @@ using UnityEngine;
 
 namespace Solarint.GrenadeIndicator
 {
-    [BepInPlugin("solarint.grenadeIndicator", "Grenade Indicator", "1.0.0")]
+    [BepInPlugin("solarint.grenadeIndicator", "Grenade Indicator", "1.0.1")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
@@ -165,6 +165,7 @@ namespace Solarint.GrenadeIndicator
         {
             Grenade = this.GetComponent<Grenade>();
             _indicator = DebugGizmos.CreateLabel(Grenade.transform.position, "[!]", DefaultStyle, 1f);
+            _indicator.Enabled = false;
 
             if (Settings.TrailEnabled.Value) {
                 _trailRenderer = this.gameObject.AddComponent<TrailRenderer>();
