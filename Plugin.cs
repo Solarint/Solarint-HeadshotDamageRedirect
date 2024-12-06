@@ -8,11 +8,10 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using System.Threading;
-using ShotID = GStruct389;
 
 namespace Solarint.HeadshotDamageRedirect
 {
-    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.3.0")]
+    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.4.0")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
@@ -27,7 +26,7 @@ namespace Solarint.HeadshotDamageRedirect
         protected override MethodBase GetTargetMethod() => typeof(Player).GetMethod("ApplyDamageInfo");
 
         [PatchPrefix]
-        public static void PatchPrefix(ref EBodyPart bodyPartType, ref DamageInfo damageInfo, ref Player __instance)
+        public static void PatchPrefix(ref EBodyPart bodyPartType, ref DamageInfoStruct damageInfo, ref Player __instance)
         {
             if (Settings.ModEnabled.Value == false) {
                 return;
@@ -78,12 +77,12 @@ namespace Solarint.HeadshotDamageRedirect
 
         private static readonly StringBuilder _sb = new StringBuilder();
 
-        private static void createDamageToEachPart(List<EBodyPart> parts, float totalDamage, DamageInfo damageInfo, Player player, StringBuilder stringBuilder)
+        private static void createDamageToEachPart(List<EBodyPart> parts, float totalDamage, DamageInfoStruct damageInfo, Player player, StringBuilder stringBuilder)
         {
             float perPart = totalDamage / parts.Count;
             foreach (var part in parts) {
                 // Create a new instance of DamageInfo with all the same info as the original
-                DamageInfo redirectedDamageInfo = CloneDamageInfo(damageInfo);
+                DamageInfoStruct redirectedDamageInfo = CloneDamageInfo(damageInfo);
 
                 // Update the info in the new damageinfo to label it correctly and apply the redirected damage
                 UpdateNewDamageInfo(redirectedDamageInfo, damageInfo, perPart);
@@ -92,7 +91,7 @@ namespace Solarint.HeadshotDamageRedirect
                 EBodyPartColliderType newColliderType = GetNewColliderType(part);
 
                 // Create a new shotID
-                ShotID newShotID = new ShotID(redirectedDamageInfo.SourceId, 0);
+                ShotIdStruct newShotID = new ShotIdStruct(redirectedDamageInfo.SourceId, 0);
 
                 // Apply the redirected damage to the selected part
                 player.ApplyShot(redirectedDamageInfo, part, newColliderType, 0, newShotID);
@@ -149,7 +148,7 @@ namespace Solarint.HeadshotDamageRedirect
             return UnityEngine.Random.Range(0f, 100f) < v;
         }
 
-        private static void UpdateNewDamageInfo(DamageInfo redirectedDamageInfo, DamageInfo originalDamageInfo, float damageToRedirect)
+        private static void UpdateNewDamageInfo(DamageInfoStruct redirectedDamageInfo, DamageInfoStruct originalDamageInfo, float damageToRedirect)
         {
             redirectedDamageInfo.Damage = damageToRedirect;
             redirectedDamageInfo.ArmorDamage = 0f;
@@ -196,9 +195,9 @@ namespace Solarint.HeadshotDamageRedirect
             return newColliderType;
         }
 
-        private static DamageInfo CloneDamageInfo(DamageInfo oldDamageInfo)
+        private static DamageInfoStruct CloneDamageInfo(DamageInfoStruct oldDamageInfo)
         {
-            return new DamageInfo {
+            return new DamageInfoStruct {
                 Damage = oldDamageInfo.Damage,
                 DamageType = oldDamageInfo.DamageType,
                 PenetrationPower = oldDamageInfo.PenetrationPower,
