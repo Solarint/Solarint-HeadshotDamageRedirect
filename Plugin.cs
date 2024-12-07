@@ -11,7 +11,7 @@ using System.Threading;
 
 namespace Solarint.HeadshotDamageRedirect
 {
-    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.4.0")]
+    [BepInPlugin("solarint.dmgRedirect", "Headshot Damage Redirection", "1.3.1")]
     public class Plugin : BaseUnityPlugin
     {
         private void Awake()
